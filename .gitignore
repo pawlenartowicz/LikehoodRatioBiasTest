@@ -1,0 +1,8 @@
+__pycache__/*
+.Rproj.user
+profiling_results
+Z-Curve-3.0.Rproj
+.vscode/settings.json
+.RData
+*.pkl
+.Rhistory
