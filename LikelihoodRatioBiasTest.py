@@ -145,7 +145,7 @@ class LikelihoodRatioBiasTest:
         return self
 
     # Visualization method to plot model distributions
-    def visualize(self):
+    def visualize(self, title = 'Likelihood Ratio Bias Test'):
         import numpy as np  # Ensure numpy is imported
         import matplotlib.pyplot as plt
         import matplotlib.patches as patches
@@ -153,13 +153,13 @@ class LikelihoodRatioBiasTest:
 
         # Define a range of x values over which to evaluate the PDFs
         x_values = np.linspace(0, 6, 1000)
-        plt.figure(figsize=(10, 6), dpi=100)
+        plt.figure(figsize=(8, 8), dpi=100)
 
         # Define histogram bins starting at 0 with a bin width of 0.196
         bins = np.arange(0, max(data) + 0.196, 0.196)
 
         # Plot the histogram of the data
-        plt.hist(data, bins=bins, density=True, alpha=0.5, color='lightgray', label='Data Histogram')
+        plt.hist(data, bins=bins, density=True, alpha=0.8, color='gray', label='Data Histogram')
 
         # Display bootstrap confidence interval if available
         if hasattr(self, 'bootstraped_ci_models') and self.bootstraped_ci_models:
@@ -201,7 +201,7 @@ class LikelihoodRatioBiasTest:
         # Labels and legend
         plt.xlabel('Z-scores')
         plt.ylabel('Density')
-        plt.title('Comparison of Fitted Mixture Models')
+        plt.title(title)
         plt.legend(loc='upper right')
 
         # Set x-axis limits

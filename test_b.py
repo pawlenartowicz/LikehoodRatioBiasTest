@@ -28,8 +28,8 @@ h1_analyses = Parallel(n_jobs=-1)(
     delayed(LikelihoodRatioBiasTest)(dataset['data']) for dataset in tqdm(data_list, desc="Processing datasets")
 )
 
-# Calculate the 95th percentile for a chi-squared distribution with 0.5 degrees of freedom
-quantile_95 = chi2.ppf(0.95, df=0.5)
+# Calculate the 95th percentile for a chi-squared distribution with 0.4 degrees of freedom
+quantile_95 = chi2.ppf(0.95, df=0.4)
 
 # Create a list of dictionaries, each containing bias level, sample size, and likelihood ratio test statistic (LRTS)
 data = [{'bias': dataset['bias'], 'size': dataset['size'], 'lrts': analysis.lrts} for dataset, analysis in zip(data_list, h1_analyses)]

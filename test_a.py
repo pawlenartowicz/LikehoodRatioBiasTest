@@ -21,7 +21,7 @@ with open('h0.pkl', 'rb') as file:
 
 # Optionally sample a subset of data if needed
 # from random import sample
-# data_list = sample(data_list, 2000)
+# data_list = sample(data_list, 100)
 
 # Apply the Likelihood Ratio Bias Test (LRBT) in parallel across all datasets in `data_list`
 h0_analyses = Parallel(n_jobs=-1, batch_size='auto')(
@@ -31,9 +31,13 @@ h0_analyses = Parallel(n_jobs=-1, batch_size='auto')(
 # Extract the likelihood ratio test statistics (LRTS) from each analysis result
 ll = [x.lrts for x in h0_analyses]
 
+# problems = [x.data for x in h0_analyses if x.lrts >150]
+# with open('problems.pkl', 'wb') as file:
+#      pickle.dump(problems, file)
+
 
 # Calculate chi-squared quantiles for the 95% and 99% thresholds based on degrees of freedom (df)
-df = 0.50
+df = 0.40
 quantile_95 = chi2.ppf(0.95, df=df)
 quantile_99 = chi2.ppf(0.99, df=df)
 

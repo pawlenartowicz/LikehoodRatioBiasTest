@@ -91,21 +91,20 @@ def m_step(data, responsibilities, distributions):
     return pis
 
 # EM-algorithm: iteratively apply E-step and M-step until convergence
-def em_algorithm(data, distributions, pi, tolerance=1e-3, max_iter=1000):    
+def em_algorithm(data, distributions, pi, tolerance=1e-2, max_iter=1000):    
 
     prev_log_likelihood = -np.inf  # Initialize previous log-likelihood to a very low value
 
-    for _ in range(max_iter):
+    for i in range(max_iter):
         # E-step and log-likelihood calculation
         responsibilities, current_log_likelihood = e_step(data, distributions, pi)
 
         # M-step: update component parameters
         pi = m_step(data, responsibilities, distributions)
-
         # Check for convergence based on change in log-likelihood
-        if np.abs(current_log_likelihood - prev_log_likelihood) < tolerance:
+        if (current_log_likelihood - prev_log_likelihood) < tolerance and i>10:
             break
-
+        
         prev_log_likelihood = current_log_likelihood
 
     # Calculate estimated number of missing studies due to publication bias

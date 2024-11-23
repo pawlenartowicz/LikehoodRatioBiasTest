@@ -1,7 +1,7 @@
 from scipy.stats import norm
 import numpy as np
 import pickle
-from random import sample
+import random
 from scipy.stats import truncnorm
 
 def syntetic_data(
@@ -75,6 +75,7 @@ def syntetic_data(
     return h0_effects, h1_effects
 
 np.random.seed(2137)
+random.seed(2137)
 h0, h1 = syntetic_data()
 
 with open('h0.pkl', 'wb') as file:
@@ -83,15 +84,11 @@ with open('h0.pkl', 'wb') as file:
 with open('h1.pkl', 'wb') as file:
      pickle.dump(h1, file)
 
+h0, h1 = syntetic_data(n_batches=10)
 
-filtered_h1 = [effect for effect in h1 if np.sum(effect['data'] > 1.96) >= 40]
-sample_to_tests = sample(filtered_h1,2000)
+filtered_h1 = [effect for effect in h1 if np.sum(effect['data'] > 1.96) >= 100]
+sample_to_tests = random.sample(filtered_h1,2000)
 
-with open('sample_to_tests.pkl', 'wb') as file:
+with open('sample_to_tests2.pkl', 'wb') as file:
      pickle.dump(sample_to_tests, file)
 
-
-i = 1
-for bias in range(5, 100, 5):
-    print(i)
-    i+=1

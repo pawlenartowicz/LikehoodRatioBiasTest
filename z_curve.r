@@ -4,7 +4,7 @@ library(zcurve)
 py_run_string("import pickle")
 
 # Load the pickle file
-py_run_string("with open('data_r.pkl', 'rb') as file:
+py_run_string("with open('sample_to_tests2.pkl', 'rb') as file:
                   data = pickle.load(file)")
 
 # Convert Python object to an R object
@@ -56,5 +56,5 @@ for (i in 1:2000) {
 missings_df <- data.frame(missings = unlist(missings))
 
 # Save as a CSV file
-write.csv(missings_df, "results_r.csv", row.names = FALSE)
+write.csv(missings_df, "results_r2.csv", row.names = FALSE)
 
