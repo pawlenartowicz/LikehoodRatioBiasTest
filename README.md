@@ -28,5 +28,3 @@ results.lrts                # Likelihood ratio comparing biased and unbiased est
 ```
 
 
-
-`

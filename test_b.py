@@ -21,7 +21,7 @@ with open('h1.pkl', 'rb') as file:
 
 # Optional: Sample a subset of data if needed for testing
 # from random import sample
-# data_list = sample(data_list, 1000)
+# data_list = sample(data_list, 8000)
 
 # Use joblib to apply the LikelihoodRatioBiasTest in parallel to each dataset in `data_list`
 h1_analyses = Parallel(n_jobs=-1)(
@@ -29,7 +29,7 @@ h1_analyses = Parallel(n_jobs=-1)(
 )
 
 # Calculate the 95th percentile for a chi-squared distribution with 0.4 degrees of freedom
-quantile_95 = chi2.ppf(0.95, df=0.4)
+quantile_95 = chi2.ppf(0.95, df=0.55)
 
 # Create a list of dictionaries, each containing bias level, sample size, and likelihood ratio test statistic (LRTS)
 data = [{'bias': dataset['bias'], 'size': dataset['size'], 'lrts': analysis.lrts} for dataset, analysis in zip(data_list, h1_analyses)]
@@ -70,7 +70,7 @@ plt.show()
 
 # Extract true and estimated rates of unreported tests for scatter plot
 true = [x['missing'] for x in data_list]
-estimated = [x.missing_estimation / (1 + x.missing_estimation) for x in h1_analyses]
+estimated = [x.missing_estimation for x in h1_analyses]
 
 # Identify significant results based on the 95th quantile threshold
 signif = [x.lrts > quantile_95 for x in h1_analyses]
@@ -115,7 +115,7 @@ axes = axes.flatten()  # Flatten to 1D array for easier indexing
 for i, size in enumerate(sizes):
     # Filter data for the current sample size
     true = [x['missing'] for x in data_list if x['size'] == size]
-    estimated = [x.missing_estimation / (1 + x.missing_estimation) for x, y in zip(h1_analyses, data_list) if y['size'] == size]
+    estimated = [x.missing_estimation for x, y in zip(h1_analyses, data_list) if y['size'] == size]
     signif = [x.lrts > quantile_95 for x, y in zip(h1_analyses, data_list) if y['size'] == size]
     
     # Calculate power as the percentage of significant results

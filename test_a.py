@@ -37,13 +37,15 @@ ll = [x.lrts for x in h0_analyses]
 
 
 # Calculate chi-squared quantiles for the 95% and 99% thresholds based on degrees of freedom (df)
-df = 0.40
+df = 0.6
 quantile_95 = chi2.ppf(0.95, df=df)
 quantile_99 = chi2.ppf(0.99, df=df)
+
 
 # Filter the LRTS data to count how many values exceed the 95% and 99% quantiles
 l95 = [x for x in ll if x > quantile_95]
 l99 = [x for x in ll if x > quantile_99]
+
 
 # Generate theoretical and sample quantiles for chi-squared distribution Q-Q plot (without plotting yet)
 res = probplot(ll, dist="chi2", sparams=(df,))
@@ -76,7 +78,10 @@ plt.ylabel("Sample Quantiles")
 plt.grid(True)
 plt.legend()
 
-# Save the Q-Q plot in both PNG and SVG formats with specified quality settings
+# # Save the Q-Q plot in both PNG and SVG formats with specified quality settings
 plt.savefig('plots/a_test_ll.png', dpi=300, bbox_inches='tight')
 plt.savefig('plots/a_test_ll.svg', format='svg', bbox_inches='tight')
 plt.show()
+
+ll0 = [x.lrts for x in h0_analyses if x.lrts<0]
+print(len(ll0))

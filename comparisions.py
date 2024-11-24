@@ -17,7 +17,7 @@ except:
     pass
 
 # Load test data from 'sample_to_tests.pkl' to ensure consistent data across tests
-with open('sample_to_tests.pkl', 'rb') as file:
+with open('sample_to_tests2.pkl', 'rb') as file:
     data_list = pickle.load(file)
 
 # Define the Caliper Test function to compare z-scores around a critical value
@@ -41,7 +41,7 @@ caliper_test_results = Parallel(n_jobs=-1)(
 
 # Load precomputed Z-Curve 2 results from a CSV file
 z_curve_results = []
-with open('results_r.csv', newline='') as csvfile:
+with open('results_r2.csv', newline='') as csvfile:
     reader = csv.reader(csvfile)
     
     for row in reader:
@@ -51,7 +51,7 @@ with open('results_r.csv', newline='') as csvfile:
         z_curve_results.append(float(value))  # Convert valid values to float
 
 # Calculate the estimated missing rates for each method
-LikelihoodRatioBiasTest_results = [x.missing_estimation / (1 + x.missing_estimation) for x in LikelihoodRatioBiasTest_results]
+LikelihoodRatioBiasTest_results = [x.missing_estimation for x in LikelihoodRatioBiasTest_results]
 caliper_test_results = [(x[1] - x[0]) / (x[1] + x[0]) for x in caliper_test_results]
 
 # Extract true values of missing rates from the dataset
@@ -310,9 +310,9 @@ bdif_LRBT_std = np.std(bdif_LRBT)
 bdif_CT_std = np.std(bdif_CT)
 bdif_Z2_std = np.std(bdif_Z2)
 
-bLRBT_cor, pv = spearmanr(Bias_LRBT_EST, true)
-bCT_cor, pv = spearmanr(Bias_Caliper_EST, true)
-bZ2_cor, pv = spearmanr(Bias_Z2_EST, true)
+bLRBT_cor, pv = spearmanr(Bias_LRBT_EST, true_bias)
+bCT_cor, pv = spearmanr(Bias_Caliper_EST, true_bias)
+bZ2_cor, pv = spearmanr(Bias_Z2_EST, true_bias)
 
 bmse_LRBT = np.mean([(est - true_val) ** 2 for est, true_val in zip(Bias_LRBT_EST, true_bias)])
 bmse_CT = np.mean([(est - true_val) ** 2 for est, true_val in zip(Bias_Caliper_EST, true_bias)])

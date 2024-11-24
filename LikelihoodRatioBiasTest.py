@@ -1,7 +1,6 @@
 from em_functions import *  # Import all necessary functions from the EM algorithm helper module
 import numpy as np
 from copy import deepcopy
-from sklearn.cluster import KMeans
 
 # Attempt to set the max CPU count to physical cores only (relevant if using parallel computation in bootstrap)
 try:
@@ -36,11 +35,16 @@ class LikelihoodRatioBiasTest:
             'name': 'P_hacked',
             'pdf': truncated_gaussian_pdf_wrapper,
             'params': {'mu': 1, 'sigma': 1, 'a': 0.96, 'b': np.inf}
+        },
+        {
+            'name': 'P_hacked',
+            'pdf': truncated_gaussian_pdf_wrapper,
+            'params': {'mu': 3, 'sigma': 1, 'a': -1.04, 'b': np.inf}
         }
     ]
 
     # Initialize the test with data and parameters
-    def __init__(self, data, format="Z-values", start_bias_from='no_bias', bias_functions='default'):
+    def __init__(self, data, format="Z-values", bias_functions='default', n_clusters='default'):
         self.initialized = True
 
         # Check for custom bias functions; use default if not specified or incorrect
@@ -57,7 +61,7 @@ class LikelihoodRatioBiasTest:
         self.data = data  # Store data for use in test
 
         # Quantile-based initialization to generate initial cluster centers
-        n_clusters = 5
+        n_clusters = int(np.max([5, np.power(len(data), 1/3) - len(self.bias)]))
         quantiles = np.percentile(data, np.linspace(0, 100, n_clusters + 2))
 
         # Initialize distributions with quantile-based centers
@@ -71,7 +75,7 @@ class LikelihoodRatioBiasTest:
                 {
                     'name': 'FoldedNormal',
                     'pdf': folded_normal_pdf_wrapper,
-                    'params': {'mu': center, 'sigma': 1}
+                    'params': {'mu': find_mu_fast(center, mu_values, precomputed_means), 'sigma': 1}
                 } for center in quantiles[1:n_clusters+1]
             ],
         ]
@@ -83,66 +87,81 @@ class LikelihoodRatioBiasTest:
         pi = np.full(len(distributions), 1.0 / len(distributions))
         self.no_b = em_algorithm(data, distributions, pi)
 
-        # Fit the "biased" model
-        if start_bias_from == 'quantiles':
-            distributions = deepcopy(self.quantile_distributions)
-            pi = np.full(len(distributions) + len(self.bias), 1.0 / (len(distributions) + len(self.bias)))
+        # Calculate "bias" model, starting from no bias estimation
+        pi = np.full(len(distributions), 1.0 / len(distributions))
+        pi = np.concatenate((self.no_b['pi'], np.full(len(self.bias), 0.1)))
+        pi /= pi.sum()  
+        distributions = deepcopy(self.quantile_distributions + self.bias)
+        bias1 = em_algorithm(data, distributions, pi)
 
-        elif start_bias_from == 'no_bias':
-            # Start with parameters from the no-bias model and add the bias components
-            pi = np.concatenate((self.no_b['pi'], np.full(len(self.bias), 0.1)))
-            pi /= pi.sum()
-            distributions = deepcopy(self.no_b['distributions'] + self.bias)
+        # Calculate "bias" model, starting from no specified distribution
+        pi = np.concatenate((self.no_b['pi'], np.full(len(self.bias), 0.1)))
+        pi /= pi.sum()
+        distributions = deepcopy(self.no_b['distributions'] + self.bias)
+        bias2 = em_algorithm(data, distributions, pi)
 
-        # Apply the EM algorithm for the biased model and calculate test statistics
-        self.ex_b = em_algorithm(data, distributions, pi)
-        self.missing_estimation = self.ex_b['missing_studies']
-        self.lrts = -2 * (self.no_b['loglikelihood'] - self.ex_b['loglikelihood'])
+        if bias1['loglikelihood'] > bias2['loglikelihood']:
+            self.ex_b = bias1
 
-    # Bootstrap method for calculating confidence intervals
-    def bootstrap(self, n_steps=500, parallel=False):
-        bootstrap = []
-
-        if parallel:
-            # Set CPU count for parallel computation if available
-            try:
-                import os
-                import psutil
-                physical_cores = psutil.cpu_count(logical=False)
-                os.environ['LOKY_MAX_CPU_COUNT'] = str(physical_cores)
-            except:
-                pass
         else:
+            self.ex_b = bias2
+
+        self.lrts = 2 * ( self.ex_b['loglikelihood'] - self.no_b['loglikelihood'])
+
+        self.missing_estimation = self.ex_b['missing_studies']
+
+
+    def bootstrap(self, n_steps=500, parallel_computing = True):
+        from tqdm import tqdm
+        n_data = len(self.data)
+        # Vectorized sampling of bootstrap datasets
+        bootstrap_indices = np.random.randint(0, n_data, (n_steps, n_data))
+        bootstrap_data = self.data[bootstrap_indices]
+
+        # Define a single bootstrap iteration
+        def single_iteration(data):
             distributions = deepcopy(self.ex_b['distributions'])
             pi = deepcopy(self.ex_b['pi'])
+            return em_algorithm(data, distributions, pi)
 
-            # Perform bootstrap sampling and store results
-            for _ in range(n_steps):
-                resampled_data = np.random.choice(self.data, size=len(self.data), replace=True)
-                boostraped_single = em_algorithm(resampled_data, distributions, pi)
-                bootstrap.append(boostraped_single)
+        if parallel_computing:
+            from joblib import Parallel, delayed
 
-        # Extract 'missing_studies' estimates for confidence interval calculation
-        missing_values_list = [result['missing_studies'] for result in bootstrap]
+            # Parallelize bootstrap iterations
+            bootstrap_results = Parallel(n_jobs=-1)(
+                delayed(single_iteration)(bootstrap_data[i]) for i in tqdm(range(n_steps))
+            )
+        else:
+            bootstrap_result = [single_iteration(bootstrap_data[i]) for i in tqdm(range(n_steps))]
 
-        # Compute confidence intervals (2.5th and 97.5th percentiles)
+        # Extract missing studies estimates
+        missing_values_list = [result['missing_studies'] for result in bootstrap_results]
+
+        # Compute confidence intervals
         lower_percentile_value = np.percentile(missing_values_list, 2.5)
         upper_percentile_value = np.percentile(missing_values_list, 97.5)
 
         # Helper function to find the closest value to the percentile target
         def find_closest_value(value_list, target_value):
-            closest_value = (np.abs(np.array(value_list) - target_value)).argmin()
-            return closest_value
+            closest_index = (np.abs(np.array(value_list) - target_value)).argmin()
+            return closest_index
 
         # Retrieve models for lower and upper confidence intervals
         lower_closest_model = find_closest_value(missing_values_list, lower_percentile_value)
         upper_closest_model = find_closest_value(missing_values_list, upper_percentile_value)
-        self.bootstraped_ci_models = {"lower": bootstrap[lower_closest_model], "upper": bootstrap[upper_closest_model]}
 
-        # Store confidence interval values for missing studies
-        self.missing_values_ci = {"lower": lower_percentile_value, "upper": upper_percentile_value}
+        self.bootstraped_ci_models = {
+            "lower": bootstrap_results[lower_closest_model],
+            "upper": bootstrap_results[upper_closest_model]
+        }
+
+        self.missing_values_ci = {
+            "lower": lower_percentile_value,
+            "upper": upper_percentile_value
+        }
 
         return self
+
 
     # Visualization method to plot model distributions
     def visualize(self, title = 'Likelihood Ratio Bias Test'):
