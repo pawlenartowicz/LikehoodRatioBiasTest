@@ -4,7 +4,7 @@ library(zcurve)
 py_run_string("import pickle")
 
 # Load the pickle file
-py_run_string("with open('sample_to_tests2.pkl', 'rb') as file:
+py_run_string("with open('sample_to_tests3.pkl', 'rb') as file:
                   data = pickle.load(file)")
 
 # Convert Python object to an R object
@@ -21,6 +21,9 @@ for (i in seq_along(data_r)) {
   # Use tryCatch to handle errors during the Z-curve analysis
   result <- tryCatch({
     # Try running Z-curve analysis
+
+    
+    
     zcurve(z_values, bootstrap=FALSE)
   }, error = function(e) {
     # If an error occurs, return the error message
@@ -36,7 +39,7 @@ for (i in seq_along(data_r)) {
 missings <- list()  # List to store missing values
 
 # Loop over the results
-for (i in 1:2000) {
+for (i in 1:4000) {
   r <- results[[i]]  # Access the result for dataset i
   
   # Check if the result is not NULL and is a valid zcurve object
@@ -56,5 +59,24 @@ for (i in 1:2000) {
 missings_df <- data.frame(missings = unlist(missings))
 
 # Save as a CSV file
-write.csv(missings_df, "results_r2.csv", row.names = FALSE)
+write.csv(missings_df, "results_r_4000.csv", row.names = FALSE)
 
+estimated_discovery_rate <- list()  # 
+# Loop over the results
+for (i in 1:4000) {
+  r <- results[[i]]  # Access the result for dataset i
+  
+  # Check if the result is not NULL and is a valid zcurve object
+  if (!is.null(r) && inherits(r, "zcurve")) {
+    # Extract ODR and EDR estimates from the result
+    estimated_discovery_rate[[i]] <- EDR(r)$Estimate
+  } else {
+    # If result is NULL or not a valid zcurve object, store NA in the missings list
+    estimated_discovery_rate[[i]] <- NA
+  }
+}
+
+estimated_discovery_rate_df <- data.frame(estimated_discovery_rate = unlist(estimated_discovery_rate))
+
+# Save as a CSV file
+write.csv(estimated_discovery_rate_df, "results_edr_4000.csv", row.names = FALSE)
