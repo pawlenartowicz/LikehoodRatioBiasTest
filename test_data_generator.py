@@ -55,6 +55,8 @@ def syntetic_data(
                 # Find the indices of values below 1.95
                 below_threshold_indices = np.where(source_batch < 1.95)[0]
 
+                edr = len(source_batch[source_batch>1.96]) / len(source_batch)
+
                 # Determine how many values to remove based on the bias percentage
                 num_to_remove = int(len(below_threshold_indices) * (bias / 100))
 
@@ -70,7 +72,7 @@ def syntetic_data(
                 for n_size in n_sizes:
                     data = np.random.choice(source_batch,n_size,replace=False)
 
-                    h1_effects.append({"bias":bias,"size":n_size, "missing":missing,"data":data})
+                    h1_effects.append({"bias":bias,"size":n_size, "missing":missing,"data":data, "edr":edr})
 
     return h0_effects, h1_effects
 
@@ -78,17 +80,28 @@ np.random.seed(2137)
 random.seed(2137)
 h0, h1 = syntetic_data()
 
-with open('h0.pkl', 'wb') as file:
-     pickle.dump(h0, file)
+# with open('h0.pkl', 'wb') as file:
+#     pickle.dump(h0, file)
 
-with open('h1.pkl', 'wb') as file:
-     pickle.dump(h1, file)
+# with open('h1.pkl', 'wb') as file:
+#     pickle.dump(h1, file)
 
-h0, h1 = syntetic_data(n_batches=10)
+# filtered_h1 = [effect for effect in h1 if np.sum(effect['data'] > 1.96) >= 100]
+# sample_to_tests = random.sample(filtered_h1,4000)
 
-filtered_h1 = [effect for effect in h1 if np.sum(effect['data'] > 1.96) >= 100]
-sample_to_tests = random.sample(filtered_h1,2000)
+# with open('sample_to_tests3.pkl', 'wb') as file:
+#     pickle.dump(sample_to_tests, file)
 
-with open('sample_to_tests2.pkl', 'wb') as file:
-     pickle.dump(sample_to_tests, file)
 
+sample_to_tests_ci_h1 = random.sample(h1,4000)
+sample_to_tests_ci_h0 = random.sample(h0,2000)
+
+
+with open('sample_to_tests_ci_h1.pkl', 'wb') as file:
+    pickle.dump(sample_to_tests_ci_h1, file)
+
+with open('sample_to_tests_ci_h0.pkl', 'wb') as file:
+    pickle.dump(sample_to_tests_ci_h0, file)
+
+
+     

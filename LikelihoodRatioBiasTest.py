@@ -2,6 +2,9 @@ from em_functions import *
 from helper_functions import *
 import numpy as np
 from copy import deepcopy
+from scipy.stats import chi2
+import pandas as pd
+
 
 # Attempt to set the max CPU count to physical cores only (relevant if using parallel computation in bootstrap)
 try:
@@ -24,7 +27,8 @@ class LikelihoodRatioBiasTest:
     default_tolerance_lrbt = 1e-2
     default_tolerance_z_curve = 1e-5
     default_distro_lrbt = "FoldedNormal"
-
+    degrees_of_freedom = 0.6
+    p_value = None
     # Initialize the test with data and parameters
     def __init__(self, data, format="guess", bias_functions='default', n_clusters='default', method = "EM", tolerance = 'default', fixed_mu = "default"):
         
@@ -52,6 +56,8 @@ class LikelihoodRatioBiasTest:
         data = data[data < 6]
         self.z_bigger_than_6 = len(self.input) - len(data)
 
+
+        self.observed_discovery_rate = len(data[data>1.96])/len(data)
         self.data = deepcopy(data)  # Store data
 
 
@@ -130,6 +136,7 @@ class LikelihoodRatioBiasTest:
 
             self.missing_estimation = missing_studies(self.ex_b['distributions'],self.ex_b['pi'])
             self.estimated_discovery_rate = estimated_discovery_rate(self.ex_b['distributions'],self.ex_b['pi'])
+            self.p_value = chi2.sf(self.lrts, self.degrees_of_freedom)
 
         if method == "Gradient":
             print("")
@@ -154,61 +161,90 @@ class LikelihoodRatioBiasTest:
 
             self.z_curve2 = em_algorithm(data, distributions, pi, tolerance=tolerance)
             self.estimated_discovery_rate = estimated_discovery_rate(self.z_curve2['distributions'],self.z_curve2['pi'])
-            # self.observed_discovery_rate
-            self.missing_estimation = 1 - len(self.data) * self.estimated_discovery_rate / len(data)
+            self.missing_estimation = 1 -  self.estimated_discovery_rate / self.observed_discovery_rate
 
-    def bootstrap(self, n_steps=500, parallel_computing = True):
+    def bootstrap(self, n_samples=500, parallel_computing = True):
+        from tqdm import tqdm
         self.initialized_bootstrap = True
-        if self.used_method == "EM":
+        data = deepcopy(self.data)
 
-            n_data = len(self.data)
-            # Vectorized sampling of bootstrap datasets
-            bootstrap_indices = np.random.randint(0, n_data, (n_steps, n_data))
-            bootstrap_data = self.data[bootstrap_indices]
+        if self.used_method == "Z_Curve2":
+            data = data[data>1.96]
 
-            # Define a single bootstrap iteration
-            def single_iteration(data):
-                distributions = deepcopy(self.ex_b['distributions'])
+        n_data = len(data)
+            
+        subsample_size = int(np.ceil(n_data**0.7)) # Ma, Y., Leng, C., & Wang, H. (2024). Optimal subsampling bootstrap for massive data. Journal of Business & Economic Statistics, 42(1), 174-186.
+            
+        bootstrap_indices = np.array([np.random.choice(n_data, subsample_size, replace=False) for _ in range(n_samples)])
+        bootstrap_data = np.array([data[indices] for indices in bootstrap_indices])
+
+
+
+        # Define a single bootstrap iteration
+        def single_iteration(data, used_method):
+
+            if used_method == "EM":
                 pi = deepcopy(self.ex_b['pi'])
-                return em_algorithm(data, distributions, pi)
+                distributions = deepcopy(self.ex_b['distributions'])
+            elif used_method == "Z_Curve2":
+                pi = deepcopy(self.z_curve2['pi'])
+                distributions = deepcopy(self.z_curve2['distributions'])
 
-            if parallel_computing:
-                from joblib import Parallel, delayed
+            return em_algorithm(data, distributions, pi)
 
-                # Parallelize bootstrap iterations
-                bootstrap_results = Parallel(n_jobs=-1)(
-                    delayed(single_iteration)(bootstrap_data[i]) for i in range(n_steps)
-                )
-            else:
-                bootstrap_result = [single_iteration(bootstrap_data[i]) for i in range(n_steps)]
+        if parallel_computing:
+            # Parallelize bootstrap iterations
 
-            # Extract missing studies estimates
+            from joblib import Parallel, delayed
+
+            bootstrap_results = Parallel(n_jobs=-1)(
+                delayed(single_iteration)(bootstrap_data[i], self.used_method) for i in tqdm(range(n_samples))
+            )
+        else:
+            bootstrap_results = [single_iteration(bootstrap_data[i], self.used_method) for i in range(n_samples)]
+
+        # Extract missing studies estimates
+        edr_list = [estimated_discovery_rate(result['distributions'],result['pi']) for result in bootstrap_results]
+        if self.used_method == "EM":
             missing_values_list = [missing_studies(result['distributions'],result['pi']) for result in bootstrap_results]
+        elif self.used_method == "Z_Curve2":
+            edr_array = np.array(edr_list)
+            missing_values_list = 1 - edr_array / self.observed_discovery_rate
 
-            # Compute confidence intervals
-            lower_percentile_value = np.percentile(missing_values_list, 2.5)
-            upper_percentile_value = np.percentile(missing_values_list, 97.5)
 
-            # Helper function to find the closest value to the percentile target
-            def find_closest_value(value_list, target_value):
-                closest_index = (np.abs(np.array(value_list) - target_value)).argmin()
-                return closest_index
 
-            # Retrieve models for lower and upper confidence intervals
-            lower_closest_model = find_closest_value(missing_values_list, lower_percentile_value)
-            upper_closest_model = find_closest_value(missing_values_list, upper_percentile_value)
+        # Compute confidence intervals
+        l_missing = np.percentile(missing_values_list, 2.5)
+        u_missing = np.percentile(missing_values_list, 97.5)
+        l_edr = np.percentile(edr_list, 2.5)
+        u_edr= np.percentile(edr_list, 97.5)
 
-            self.bootstraped_ci_models = {
-                "lower": bootstrap_results[lower_closest_model],
-                "upper": bootstrap_results[upper_closest_model]
-            }
+        # Helper function to find the closest value to the percentile target
+        def find_closest_value(value_list, target_value):
+            closest_index = (np.abs(np.array(value_list) - target_value)).argmin()
+            return closest_index
 
-            self.missing_values_ci = {
-                "lower": lower_percentile_value,
-                "upper": upper_percentile_value
-            }
+        # Retrieve models for lower and upper confidence intervals
+        lower_missings  = find_closest_value(missing_values_list, l_missing)
+        upper_missings  = find_closest_value(missing_values_list, u_missing)
 
-            return self
+        self.bootstraped_ci_models = {
+            "lower": bootstrap_results[lower_missings],
+            "upper": bootstrap_results[upper_missings]
+        }
+
+        self.missing_values_ci = {
+            "lower": l_missing,
+            "upper": u_missing
+        }
+
+        self.estimated_discovery_rate_ci = {
+            "lower": l_edr,
+            "upper": u_edr
+        }
+
+
+        return self
 
 
     # Visualization method to plot model distributions
@@ -237,10 +273,15 @@ class LikelihoodRatioBiasTest:
                     'high_ci': {'distributions': self.bootstraped_ci_models['upper']['distributions'], 'linestyle': '--', 'pi': self.bootstraped_ci_models['upper']['pi'], 'color': 'red', 'label': '<Ex Bias> Upper CI.'}
                 }
             else:
-                text = ""
+                text =  f"Unreported tests {round(100 * self.missing_estimation, 2)}%"
                 models = {
                     'no_b': {'distributions': self.no_b['distributions'], 'pi': self.no_b['pi'], 'linestyle': '-', 'color': 'blue', 'label': '<No Bias> Estimated true distribution.'},
                     'ex_b': {'distributions': self.ex_b['distributions'], 'pi': self.ex_b['pi'], 'linestyle': '-', 'color': 'red', 'label': '<Ex Bias> Estimated true distribution.'}
+                }
+        elif self.used_method in ["Z_Curve2"]:
+                text =  f"Unreported tests {round(100 * self.missing_estimation, 2)}%"
+                models = {
+                    'z_curve2': {'distributions': self.z_curve2['distributions'], 'pi': self.z_curve2['pi'], 'linestyle': '-', 'color': 'blue', 'label': '<No Bias> Estimated true distribution.'}
                 }
 
         # Plot overall mixture density for each model
@@ -254,6 +295,8 @@ class LikelihoodRatioBiasTest:
 
                 if dist['name'] == "P_hacked":  
                     weighted_pdf_values = weighted_pdf_values / probability_Y_greater_than_a(params['mu'], params['a'])
+                if self.used_method in ["Z_Curve2"]:
+                    weighted_pdf_values *= self.observed_discovery_rate
 
                 mixture_density += weighted_pdf_values
 
@@ -274,3 +317,38 @@ class LikelihoodRatioBiasTest:
         # Set x-axis limits
         plt.xlim(0, 6)
         plt.show()
+
+    def __repr__(self):
+
+        missings = f"{round(self.missing_estimation * 100, 2)}%"
+        edr = f"{round(self.estimated_discovery_rate * 100, 2)}%"
+
+        p_value = f"{self.p_value:.4f}" if self.p_value is not None else "N/A"
+
+        # Add confidence intervals if bootstrap is initialized
+        if self.initialized_bootstrap:
+            missings_ci = (
+                f" 95% CI [{round(self.missing_values_ci['lower'] * 100, 2)}%, "
+                f"{round(self.missing_values_ci['upper'] * 100, 2)}%]"
+            )
+            missings += missings_ci
+
+            edr_ci = (
+                f" 95% CI [{round(self.estimated_discovery_rate_ci['lower'] * 100, 2)}%, "
+                f"{round(self.estimated_discovery_rate_ci['upper'] * 100, 2)}%]"
+            )
+            edr += edr_ci
+
+        # Determine the maximum width for alignment
+        col1_width = 10  # Width for "Metric"
+        col2_width = 50  # Adjusted width for "Value" to accommodate CIs
+
+        # Format the table with aligned columns
+        table = (
+            f"{'Metric':<{col1_width}} | {'Value':<{col2_width}}\n"
+            f"{'-' * (col1_width + col2_width + 3)}\n"
+            f"{'Missings':<{col1_width}} | {missings:<{col2_width}}\n"
+            f"{'EDR':<{col1_width}} | {edr:<{col2_width}}\n"
+            f"{'P_value':<{col1_width}} | {p_value:<{col2_width}}"
+        )
+        return table
