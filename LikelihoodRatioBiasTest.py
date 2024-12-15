@@ -25,14 +25,15 @@ class LikelihoodRatioBiasTest:
     default_bias_functions_lrbt =[(0,1.96),(1,1.96),(1.96,1.96),(3,1.96)]
     default_distributions_z_curve =[(0,1.96),(1,1.96),(1.96,1.96),(3,1.96),(4,1.96),(5,1.96)]
     default_tolerance_lrbt = 1e-2
-    default_tolerance_z_curve = 1e-5
+    default_tolerance_z_curve = 1e-2
     default_distro_lrbt = "FoldedNormal"
     degrees_of_freedom = 0.6
     p_value = None
     # Initialize the test with data and parameters
-    def __init__(self, data, format="guess", bias_functions='default', n_clusters='default', method = "EM", tolerance = 'default', fixed_mu = "default"):
+    def __init__(self, data, format="guess", bias_functions='default', n_clusters='default', method = "LRBT", tolerance = 'default', fixed_mu = "default"):
         
         self.input = deepcopy(data)
+        self.len_data = len(self.input)
         self.used_method = method
         # Check for custom bias functions; use default if not specified or incorrect
 
@@ -53,15 +54,13 @@ class LikelihoodRatioBiasTest:
             data = np.abs(data)
 
         # filter z_scores bigger than 6
-        data = data[data < 6]
-        self.z_bigger_than_6 = len(self.input) - len(data)
-
-
         self.observed_discovery_rate = len(data[data>1.96])/len(data)
+        data = data[data < 6]
+        self.z_bigger_than_6 = (self.len_data - len(data))/self.len_data
         self.data = deepcopy(data)  # Store data
 
 
-        if method == "EM":
+        if method == "LRBT":
 
             # load default bias functions
             if bias_functions == 'default': bias_functions = deepcopy(self.default_bias_functions_lrbt)
@@ -134,15 +133,15 @@ class LikelihoodRatioBiasTest:
 
             self.lrts = 2 * ( self.ex_b['loglikelihood'] - self.no_b['loglikelihood'])
 
-            self.missing_estimation = missing_studies(self.ex_b['distributions'],self.ex_b['pi'])
-            self.estimated_discovery_rate = estimated_discovery_rate(self.ex_b['distributions'],self.ex_b['pi'])
+            self.missing_estimation = missing_studies(self.ex_b['distributions'],self.ex_b['pi'], z_over = self.z_bigger_than_6)
+            self.estimated_discovery_rate = estimated_discovery_rate(self.ex_b['distributions'],self.ex_b['pi'], z_over = self.z_bigger_than_6)
             self.p_value = chi2.sf(self.lrts, self.degrees_of_freedom)
 
         if method == "Gradient":
             print("")
             # Place for gradient based algorithm
 
-        if method == "Z_Curve2":
+        if method == "Z_Curve":
             if bias_functions == 'default': bias_functions = deepcopy(self.default_distributions_z_curve)
             if tolerance == 'default': tolerance = deepcopy(self.default_tolerance_z_curve)
             distributions =  [*[
@@ -160,21 +159,29 @@ class LikelihoodRatioBiasTest:
             self.z_lower_than_1_96 = len(self.data) - len(data)
 
             self.z_curve2 = em_algorithm(data, distributions, pi, tolerance=tolerance)
-            self.estimated_discovery_rate = estimated_discovery_rate(self.z_curve2['distributions'],self.z_curve2['pi'])
+            self.estimated_discovery_rate = estimated_discovery_rate(self.z_curve2['distributions'],self.z_curve2['pi'], z_over = self.z_bigger_than_6)
             self.missing_estimation = 1 -  self.estimated_discovery_rate / self.observed_discovery_rate
+
+
+
+
 
     def bootstrap(self, n_samples=500, parallel_computing = True):
         from tqdm import tqdm
         self.initialized_bootstrap = True
         data = deepcopy(self.data)
 
-        if self.used_method == "Z_Curve2":
+        if self.used_method == "Z_Curve":
             data = data[data>1.96]
 
         n_data = len(data)
-            
-        subsample_size = int(np.ceil(n_data**0.7)) # Ma, Y., Leng, C., & Wang, H. (2024). Optimal subsampling bootstrap for massive data. Journal of Business & Economic Statistics, 42(1), 174-186.
-            
+
+        if self.used_method == "LRBT":
+            subsample_size = int(np.ceil(n_data**0.7)) # Ma, Y., Leng, C., & Wang, H. (2024). Optimal subsampling bootstrap for massive data. Journal of Business & Economic Statistics, 42(1), 174-186.
+        elif self.used_method == "Z_Curve":
+            subsample_size = int(np.ceil(n_data**0.7))
+
+
         bootstrap_indices = np.array([np.random.choice(n_data, subsample_size, replace=False) for _ in range(n_samples)])
         bootstrap_data = np.array([data[indices] for indices in bootstrap_indices])
 
@@ -183,10 +190,10 @@ class LikelihoodRatioBiasTest:
         # Define a single bootstrap iteration
         def single_iteration(data, used_method):
 
-            if used_method == "EM":
+            if used_method == "LRBT":
                 pi = deepcopy(self.ex_b['pi'])
                 distributions = deepcopy(self.ex_b['distributions'])
-            elif used_method == "Z_Curve2":
+            elif used_method == "Z_Curve":
                 pi = deepcopy(self.z_curve2['pi'])
                 distributions = deepcopy(self.z_curve2['distributions'])
 
@@ -205,9 +212,9 @@ class LikelihoodRatioBiasTest:
 
         # Extract missing studies estimates
         edr_list = [estimated_discovery_rate(result['distributions'],result['pi']) for result in bootstrap_results]
-        if self.used_method == "EM":
+        if self.used_method == "LRBT":
             missing_values_list = [missing_studies(result['distributions'],result['pi']) for result in bootstrap_results]
-        elif self.used_method == "Z_Curve2":
+        elif self.used_method == "Z_Curve":
             edr_array = np.array(edr_list)
             missing_values_list = 1 - edr_array / self.observed_discovery_rate
 
@@ -262,7 +269,7 @@ class LikelihoodRatioBiasTest:
         # Plot the histogram of the data
         plt.hist(data, bins=bins, density=True, alpha=0.8, color='gray', label='Data Histogram')
 
-        if self.used_method in ["EM"]:
+        if self.used_method in ["LRBT"]:
             # Display bootstrap confidence interval if available
             if self.initialized_bootstrap:
                 text = f"Unreported tests {round(100 * self.missing_estimation, 2)}%, 95%CI [{round(100 * self.missing_values_ci['lower'], 2)}, {round(100 * self.missing_values_ci['upper'], 2)}]"
@@ -278,7 +285,7 @@ class LikelihoodRatioBiasTest:
                     'no_b': {'distributions': self.no_b['distributions'], 'pi': self.no_b['pi'], 'linestyle': '-', 'color': 'blue', 'label': '<No Bias> Estimated true distribution.'},
                     'ex_b': {'distributions': self.ex_b['distributions'], 'pi': self.ex_b['pi'], 'linestyle': '-', 'color': 'red', 'label': '<Ex Bias> Estimated true distribution.'}
                 }
-        elif self.used_method in ["Z_Curve2"]:
+        elif self.used_method in ["Z_Curve"]:
                 text =  f"Unreported tests {round(100 * self.missing_estimation, 2)}%"
                 models = {
                     'z_curve2': {'distributions': self.z_curve2['distributions'], 'pi': self.z_curve2['pi'], 'linestyle': '-', 'color': 'blue', 'label': '<No Bias> Estimated true distribution.'}
@@ -295,7 +302,7 @@ class LikelihoodRatioBiasTest:
 
                 if dist['name'] == "P_hacked":  
                     weighted_pdf_values = weighted_pdf_values / probability_Y_greater_than_a(params['mu'], params['a'])
-                if self.used_method in ["Z_Curve2"]:
+                if self.used_method in ["Z_Curve"]:
                     weighted_pdf_values *= self.observed_discovery_rate
 
                 mixture_density += weighted_pdf_values

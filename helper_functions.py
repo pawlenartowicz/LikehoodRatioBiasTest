@@ -4,7 +4,7 @@ from functools import lru_cache
 from scipy.special import erf
 
 # Calculate estimated number of missing studies due to publication bias
-def missing_studies(distributions,pi):
+def missing_studies(distributions,pi, z_over = 0):
     ms= 0
     for i, dist in enumerate(distributions):
         if dist['name'] == 'P_hacked':
@@ -13,10 +13,10 @@ def missing_studies(distributions,pi):
             # Calculate missing studies based on bias in publication
             prob_above = probability_Y_greater_than_a(mu, a)
             ms += pi[i] * ((1 - prob_above) / prob_above)
-    ms = ms/(1+ms)
+    ms = ms/(1+ms+z_over)
     return ms
 
-def estimated_discovery_rate(distributions,pi):
+def estimated_discovery_rate(distributions,pi, z_over = 0):
     edr = 0
     denom = 0
     for i, dist in enumerate(distributions):
@@ -30,7 +30,7 @@ def estimated_discovery_rate(distributions,pi):
         edr += probability_Y_greater_than_a(mu,1.96-mu) * wage
         denom += wage
     edr /= denom
-    return edr
+    return edr+z_over
 
 def precompute_folded_normal_means(mu_values):
     """Precompute the means of the Folded Normal distribution for sigma=1."""
@@ -111,3 +111,5 @@ def calculate_log_likelihood(data, distributions, pi):
     # Compute log-likelihood
     log_likelihood = np.sum(np.log(np.maximum(total_likelihood, 1e-10)))
     return log_likelihood
+
+
